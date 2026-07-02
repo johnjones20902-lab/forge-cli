@@ -1,0 +1,16 @@
+{
+  "name": "forge-cli",
+  "version": "0.1.0",
+  "description": "Forge — your own AI coding agent in the terminal",
+  "type": "module",
+  "bin": {
+    "forge": "src/index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.60.0"
+  },
+  "license": "MIT"
+}
