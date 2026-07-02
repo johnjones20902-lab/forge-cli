@@ -1,7 +1,7 @@
 {
   "name": "@scousedeveloper123/forge-code",
-  "version": "0.1.0",
-  "description": "Forge — your own AI coding agent in the terminal",
+  "version": "0.2.0",
+  "description": "Forge — your own AI coding agent in the terminal (Google Gemini)",
   "type": "module",
   "bin": {
     "forge": "src/index.js"
@@ -17,9 +17,6 @@
     "type": "git",
     "url": "git+https://github.com/johnjones20902-lab/forge-cli.git"
   },
-  "keywords": ["ai", "cli", "coding-agent", "claude", "terminal"],
-  "dependencies": {
-    "@anthropic-ai/sdk": "^0.60.0"
-  },
+  "keywords": ["ai", "cli", "coding-agent", "gemini", "terminal"],
   "license": "MIT"
 }

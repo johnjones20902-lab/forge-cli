@@ -1,33 +1,33 @@
 # Forge
 
-Your own AI coding agent in the terminal — same concept as Claude Code / OpenCode, but yours.
+Your own AI coding agent in the terminal — same concept as Claude Code / OpenCode, but yours. Powered by **Google Gemini's free tier**, so there's no bill.
 
 ## Install
 
-The easiest way — works in Command Prompt, PowerShell, or any terminal (needs [Node.js](https://nodejs.org) 18+):
+Works in Command Prompt, PowerShell, or any terminal (needs [Node.js](https://nodejs.org) 18+):
+
+```
+npm install -g github:johnjones20902-lab/forge-cli
+```
+
+Once the npm package clears review, this also works:
 
 ```
 npm install -g @scousedeveloper123/forge-code
 ```
 
-Or the one-line script installers:
+Then run:
 
 ```
-curl -fsSL https://raw.githubusercontent.com/johnjones20902-lab/forge-cli/main/install.sh | bash
+forge
 ```
 
-Windows (PowerShell):
-
-```powershell
-irm https://raw.githubusercontent.com/johnjones20902-lab/forge-cli/main/install.ps1 | iex
-```
-
-Then run `forge` — you'll be asked for your [Anthropic API key](https://platform.claude.com/) on first launch (saved to `~/.forge/config.json`).
+On first launch it asks for a **free** Google AI (Gemini) API key — get one at https://aistudio.google.com/apikey (no billing required). It's saved to `~/.forge/config.json`, so you're only asked once.
 
 ## What it can do
 
 - Chat with a coding agent that can **read, write, and edit files** and **run shell commands** in your project
-- Streaming responses, adaptive thinking, prompt caching
+- Powered by Gemini (`gemini-2.5-flash` by default) — free
 - Asks for confirmation before running commands or writing files (`forge --yolo` to skip)
 
 ## Commands
@@ -36,21 +36,17 @@ Then run `forge` — you'll be asked for your [Anthropic API key](https://platfo
 |---|---|
 | `/help` | show help |
 | `/clear` | reset the conversation |
-| `/model <id>` | switch model (default `claude-opus-4-8`) |
+| `/model <id>` | switch model (e.g. `gemini-2.5-flash`, `gemini-2.5-pro`) |
 | `/cwd <path>` | change working directory |
 | `/exit` | quit |
 
 ## Local development
 
 ```
+git clone https://github.com/johnjones20902-lab/forge-cli
 cd forge-cli
-npm install
 npm link      # makes the `forge` command available globally
 forge
 ```
 
-## Hosting the one-line installer
-
-1. The raw GitHub URL works as-is:
-   `curl -fsSL https://raw.githubusercontent.com/johnjones20902-lab/forge-cli/main/install.sh | bash`
-2. For a short URL like `https://forge.yourdomain.com/install`, put the script behind any static host (Cloudflare Pages, Vercel, GitHub Pages) or add a redirect rule pointing at the raw GitHub URL.
+No dependencies — pure Node.js `fetch`.

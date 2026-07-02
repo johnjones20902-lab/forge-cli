@@ -1,17 +1,17 @@
 #!/usr/bin/env node
 // Forge — your own AI coding agent in the terminal.
-// Chat REPL + tool loop (read/write/edit files, run shell commands) powered by the Claude API.
+// Chat REPL + tool loop (read/write/edit files, run shell commands) powered by Google Gemini (free tier).
 
-import Anthropic from "@anthropic-ai/sdk";
 import { execSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import readline from "node:readline";
 
-const VERSION = "0.1.0";
+const VERSION = "0.2.0";
 const CONFIG_DIR = path.join(os.homedir(), ".forge");
 const CONFIG_FILE = path.join(CONFIG_DIR, "config.json");
+const API_BASE = "https://generativelanguage.googleapis.com/v1beta";
 
 // ---------- colors ----------
 const c = {
@@ -31,20 +31,26 @@ function saveConfig(cfg) {
 }
 
 const config = loadConfig();
-let MODEL = config.model || "claude-opus-4-8";
+let MODEL = config.model || "gemini-2.5-flash";
 const YOLO = process.argv.includes("--yolo"); // skip confirmations
 
 // ---------- readline ----------
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-const ask = (q) => new Promise((res) => rl.question(q, res));
+let closed = false;
+rl.on("close", () => { closed = true; });
+const ask = (q) => new Promise((res) => {
+  if (closed) return res("/exit");
+  rl.question(q, res);
+});
 
 async function getApiKey() {
-  if (process.env.ANTHROPIC_API_KEY) return process.env.ANTHROPIC_API_KEY;
-  if (config.apiKey) return config.apiKey;
-  console.log(paint(c.yellow, "\nNo API key found. Get one at https://platform.claude.com/"));
-  const key = (await ask(paint(c.bold, "Paste your Anthropic API key: "))).trim();
+  if (process.env.GEMINI_API_KEY) return process.env.GEMINI_API_KEY;
+  if (process.env.GOOGLE_API_KEY) return process.env.GOOGLE_API_KEY;
+  if (config.geminiKey) return config.geminiKey;
+  console.log(paint(c.yellow, "\nNo API key found. Get a FREE one at https://aistudio.google.com/apikey"));
+  const key = (await ask(paint(c.bold, "Paste your Google AI (Gemini) API key: "))).trim();
   if (!key) { console.log(paint(c.red, "An API key is required.")); process.exit(1); }
-  config.apiKey = key;
+  config.geminiKey = key;
   saveConfig(config);
   console.log(paint(c.green, `Saved to ${CONFIG_FILE}\n`));
   return key;
@@ -55,7 +61,7 @@ const tools = [
   {
     name: "bash",
     description: "Run a shell command in the current working directory and return stdout+stderr. Use for git, npm, builds, tests, listing files, searching, etc.",
-    input_schema: {
+    parameters: {
       type: "object",
       properties: { command: { type: "string", description: "The shell command to run" } },
       required: ["command"],
@@ -64,7 +70,7 @@ const tools = [
   {
     name: "read_file",
     description: "Read a text file and return its contents with line numbers.",
-    input_schema: {
+    parameters: {
       type: "object",
       properties: { path: { type: "string", description: "File path (relative or absolute)" } },
       required: ["path"],
@@ -73,11 +79,11 @@ const tools = [
   {
     name: "write_file",
     description: "Create or overwrite a file with the given content. Parent directories are created automatically.",
-    input_schema: {
+    parameters: {
       type: "object",
       properties: {
-        path: { type: "string" },
-        content: { type: "string" },
+        path: { type: "string", description: "File path to write" },
+        content: { type: "string", description: "Full file contents" },
       },
       required: ["path", "content"],
     },
@@ -85,12 +91,12 @@ const tools = [
   {
     name: "edit_file",
     description: "Replace an exact string in a file with a new string. old_string must appear exactly once.",
-    input_schema: {
+    parameters: {
       type: "object",
       properties: {
-        path: { type: "string" },
-        old_string: { type: "string" },
-        new_string: { type: "string" },
+        path: { type: "string", description: "File path to edit" },
+        old_string: { type: "string", description: "Exact text to find (must be unique)" },
+        new_string: { type: "string", description: "Replacement text" },
       },
       required: ["path", "old_string", "new_string"],
     },
@@ -98,7 +104,7 @@ const tools = [
   {
     name: "list_dir",
     description: "List files and folders in a directory.",
-    input_schema: {
+    parameters: {
       type: "object",
       properties: { path: { type: "string", description: "Directory path, defaults to cwd" } },
     },
@@ -112,107 +118,132 @@ async function confirm(label) {
 }
 
 async function runTool(name, input) {
+  input = input || {};
   switch (name) {
     case "bash": {
       console.log(paint(c.cyan, `\n▶ bash: ${input.command}`));
-      if (!(await confirm("run this command"))) return { text: "User declined to run this command.", error: true };
+      if (!(await confirm("run this command"))) return "User declined to run this command.";
       try {
         const out = execSync(input.command, {
           encoding: "utf8", timeout: 120_000, maxBuffer: 10 * 1024 * 1024,
           stdio: ["ignore", "pipe", "pipe"],
         });
-        return { text: out.slice(0, 50_000) || "(no output)" };
+        return out.slice(0, 50_000) || "(no output)";
       } catch (e) {
-        const out = [e.stdout, e.stderr, e.message].filter(Boolean).join("\n");
-        return { text: out.slice(0, 50_000), error: true };
+        return [e.stdout, e.stderr, e.message].filter(Boolean).join("\n").slice(0, 50_000);
       }
     }
     case "read_file": {
       console.log(paint(c.cyan, `\n▶ read: ${input.path}`));
       try {
         const lines = fs.readFileSync(input.path, "utf8").split("\n");
-        return { text: lines.map((l, i) => `${i + 1}\t${l}`).join("\n").slice(0, 100_000) };
-      } catch (e) { return { text: String(e.message), error: true }; }
+        return lines.map((l, i) => `${i + 1}\t${l}`).join("\n").slice(0, 100_000);
+      } catch (e) { return "Error: " + e.message; }
     }
     case "write_file": {
-      console.log(paint(c.cyan, `\n▶ write: ${input.path} (${input.content.length} chars)`));
-      if (!(await confirm(`write ${input.path}`))) return { text: "User declined the write.", error: true };
+      console.log(paint(c.cyan, `\n▶ write: ${input.path} (${(input.content || "").length} chars)`));
+      if (!(await confirm(`write ${input.path}`))) return "User declined the write.";
       try {
         fs.mkdirSync(path.dirname(path.resolve(input.path)), { recursive: true });
-        fs.writeFileSync(input.path, input.content);
-        return { text: `Wrote ${input.path}` };
-      } catch (e) { return { text: String(e.message), error: true }; }
+        fs.writeFileSync(input.path, input.content ?? "");
+        return `Wrote ${input.path}`;
+      } catch (e) { return "Error: " + e.message; }
     }
     case "edit_file": {
       console.log(paint(c.cyan, `\n▶ edit: ${input.path}`));
-      if (!(await confirm(`edit ${input.path}`))) return { text: "User declined the edit.", error: true };
+      if (!(await confirm(`edit ${input.path}`))) return "User declined the edit.";
       try {
         const src = fs.readFileSync(input.path, "utf8");
         const count = src.split(input.old_string).length - 1;
-        if (count === 0) return { text: "old_string not found in file.", error: true };
-        if (count > 1) return { text: `old_string appears ${count} times — make it unique.`, error: true };
+        if (count === 0) return "old_string not found in file.";
+        if (count > 1) return `old_string appears ${count} times — make it unique.`;
         fs.writeFileSync(input.path, src.replace(input.old_string, input.new_string));
-        return { text: `Edited ${input.path}` };
-      } catch (e) { return { text: String(e.message), error: true }; }
+        return `Edited ${input.path}`;
+      } catch (e) { return "Error: " + e.message; }
     }
     case "list_dir": {
       const dir = input.path || ".";
       console.log(paint(c.cyan, `\n▶ ls: ${dir}`));
       try {
-        const entries = fs.readdirSync(dir, { withFileTypes: true })
-          .map((e) => (e.isDirectory() ? e.name + "/" : e.name));
-        return { text: entries.join("\n") || "(empty)" };
-      } catch (e) { return { text: String(e.message), error: true }; }
+        return fs.readdirSync(dir, { withFileTypes: true })
+          .map((e) => (e.isDirectory() ? e.name + "/" : e.name)).join("\n") || "(empty)";
+      } catch (e) { return "Error: " + e.message; }
     }
     default:
-      return { text: `Unknown tool: ${name}`, error: true };
+      return `Unknown tool: ${name}`;
   }
 }
 
 // ---------- system prompt ----------
 const SYSTEM = `You are Forge, an AI coding agent running in the user's terminal (cwd: ${process.cwd()}, OS: ${os.platform()}).
 You help with software engineering: exploring codebases, writing and editing files, running commands, debugging, and answering questions.
-Use the tools to inspect the project before making changes. Prefer edit_file for small changes and write_file for new files.
-Keep responses concise and terminal-friendly (no heavy markdown tables). When you finish a task, briefly summarize what you did.`;
+Use the provided tools to inspect the project before making changes. Prefer edit_file for small changes and write_file for new files.
+Keep responses concise and terminal-friendly. When you finish a task, briefly summarize what you did.`;
+
+// ---------- Gemini API ----------
+// Gemini function declarations want OpenAPI-style types; uppercase them.
+function upperTypes(schema) {
+  if (Array.isArray(schema)) return schema.map(upperTypes);
+  if (schema && typeof schema === "object") {
+    const out = {};
+    for (const [k, v] of Object.entries(schema)) {
+      if (k === "type" && typeof v === "string") out[k] = v.toUpperCase();
+      else out[k] = upperTypes(v);
+    }
+    return out;
+  }
+  return schema;
+}
+const functionDeclarations = tools.map((t) => ({
+  name: t.name,
+  description: t.description,
+  parameters: upperTypes(t.parameters),
+}));
+
+async function callGemini(apiKey, contents) {
+  const url = `${API_BASE}/models/${MODEL}:generateContent?key=${apiKey}`;
+  const body = {
+    systemInstruction: { parts: [{ text: SYSTEM }] },
+    contents,
+    tools: [{ functionDeclarations }],
+  };
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    let msg = `HTTP ${res.status}`;
+    try { const j = await res.json(); msg = j.error?.message || msg; } catch {}
+    const err = new Error(msg); err.status = res.status; throw err;
+  }
+  const data = await res.json();
+  const cand = data.candidates?.[0];
+  return cand?.content?.parts || [];
+}
 
 // ---------- agent loop ----------
-async function agentTurn(client, messages) {
+async function agentTurn(apiKey, contents) {
   while (true) {
-    const stream = client.messages.stream({
-      model: MODEL,
-      max_tokens: 32000,
-      thinking: { type: "adaptive" },
-      system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
-      tools,
-      messages,
-    });
+    const parts = await callGemini(apiKey, contents);
+    contents.push({ role: "model", parts });
 
-    let printedAny = false;
-    stream.on("text", (delta) => {
-      if (!printedAny) { process.stdout.write("\n" + paint(c.orange, "● ") ); printedAny = true; }
-      process.stdout.write(delta);
-    });
+    const calls = parts.filter((p) => p.functionCall);
+    const texts = parts.filter((p) => p.text).map((p) => p.text).join("");
+    if (texts.trim()) console.log("\n" + paint(c.orange, "● ") + texts.trim());
 
-    const message = await stream.finalMessage();
-    if (printedAny) process.stdout.write("\n");
-    messages.push({ role: "assistant", content: message.content });
+    if (calls.length === 0) return;
 
-    if (message.stop_reason === "pause_turn") continue;
-    if (message.stop_reason !== "tool_use") return;
-
-    const toolUses = message.content.filter((b) => b.type === "tool_use");
-    const results = [];
-    for (const tu of toolUses) {
-      const { text, error } = await runTool(tu.name, tu.input);
-      if (!error) {
-        const preview = text.split("\n").slice(0, 5).join("\n");
-        console.log(paint(c.gray, preview.length < text.length ? preview + "\n  …" : preview));
-      } else {
-        console.log(paint(c.red, "  " + text.split("\n")[0]));
-      }
-      results.push({ type: "tool_result", tool_use_id: tu.id, content: text, ...(error ? { is_error: true } : {}) });
+    const responseParts = [];
+    for (const p of calls) {
+      const result = await runTool(p.functionCall.name, p.functionCall.args);
+      const preview = String(result).split("\n").slice(0, 5).join("\n");
+      console.log(paint(c.gray, preview));
+      responseParts.push({
+        functionResponse: { name: p.functionCall.name, response: { result: String(result) } },
+      });
     }
-    messages.push({ role: "user", content: results });
+    contents.push({ role: "user", parts: responseParts });
   }
 }
 
@@ -222,15 +253,15 @@ function banner() {
   ╔═╗╔═╗╦═╗╔═╗╔═╗
   ╠╣ ║ ║╠╦╝║ ╦║╣
   ╚  ╚═╝╩╚═╚═╝╚═╝  v${VERSION}`));
-  console.log(paint(c.gray, `  model: ${MODEL} · cwd: ${process.cwd()}`));
-  console.log(paint(c.gray, `  /help for commands · ctrl+c to quit${YOLO ? " · YOLO MODE (no confirmations)" : ""}\n`));
+  console.log(paint(c.gray, `  model: ${MODEL} (Gemini) · cwd: ${process.cwd()}`));
+  console.log(paint(c.gray, `  /help for commands · ctrl+c to quit${YOLO ? " · YOLO MODE" : ""}\n`));
 }
 
 function help() {
   console.log(paint(c.gray, `
   /help          show this help
   /clear         clear conversation history
-  /model <id>    switch model (current: ${MODEL})
+  /model <id>    switch model (current: ${MODEL}; try gemini-2.5-flash, gemini-2.0-flash)
   /cwd <path>    change working directory
   /exit          quit
   anything else is sent to the agent.
@@ -239,16 +270,15 @@ function help() {
 
 async function main() {
   banner();
-  const client = new Anthropic({ apiKey: await getApiKey() });
-  let messages = [];
+  const apiKey = await getApiKey();
+  let contents = [];
 
   while (true) {
     const input = (await ask(paint(c.bold + c.cyan, "forge> "))).trim();
     if (!input) continue;
-
     if (input === "/exit" || input === "/quit") break;
     if (input === "/help") { help(); continue; }
-    if (input === "/clear") { messages = []; console.log(paint(c.gray, "history cleared\n")); continue; }
+    if (input === "/clear") { contents = []; console.log(paint(c.gray, "history cleared\n")); continue; }
     if (input.startsWith("/model")) {
       const m = input.split(/\s+/)[1];
       if (m) { MODEL = m; config.model = m; saveConfig(config); }
@@ -260,21 +290,18 @@ async function main() {
       console.log(paint(c.gray, `cwd: ${process.cwd()}\n`)); continue;
     }
 
-    messages.push({ role: "user", content: input });
+    contents.push({ role: "user", parts: [{ text: input }] });
     try {
-      await agentTurn(client, messages);
+      await agentTurn(apiKey, contents);
     } catch (e) {
-      if (e instanceof Anthropic.AuthenticationError) {
-        console.log(paint(c.red, "\nInvalid API key. Delete " + CONFIG_FILE + " and restart to re-enter it."));
-      } else if (e instanceof Anthropic.RateLimitError) {
-        console.log(paint(c.red, "\nRate limited — wait a moment and try again."));
-      } else if (e instanceof Anthropic.APIError) {
-        console.log(paint(c.red, `\nAPI error ${e.status}: ${e.message}`));
+      if (e.status === 400 && /API key/i.test(e.message)) {
+        console.log(paint(c.red, `\nInvalid API key. Delete ${CONFIG_FILE} and restart to re-enter it.`));
+      } else if (e.status === 429) {
+        console.log(paint(c.red, "\nRate limited (free-tier quota) — wait a moment and try again."));
       } else {
         console.log(paint(c.red, `\nError: ${e.message}`));
       }
-      // drop the failed turn's trailing user message so history stays valid
-      if (messages.at(-1)?.role === "user") messages.pop();
+      if (contents.at(-1)?.role === "user") contents.pop();
     }
     console.log();
   }
