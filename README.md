@@ -2,6 +2,16 @@
 
 Your own AI coding agent in the terminal — same concept as Claude Code / OpenCode, but yours.
 
+## Install
+
+The easiest way — works in Command Prompt, PowerShell, or any terminal (needs [Node.js](https://nodejs.org) 18+):
+
+```
+npm install -g forge-code
+```
+
+Or the one-line script installers:
+
 ```
 curl -fsSL https://raw.githubusercontent.com/johnjones20902-lab/forge-cli/main/install.sh | bash
 ```

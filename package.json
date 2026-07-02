@@ -1,14 +1,23 @@
 {
-  "name": "forge-cli",
+  "name": "forge-code",
   "version": "0.1.0",
   "description": "Forge — your own AI coding agent in the terminal",
   "type": "module",
   "bin": {
     "forge": "src/index.js"
   },
+  "files": [
+    "src",
+    "README.md"
+  ],
   "engines": {
     "node": ">=18"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/johnjones20902-lab/forge-cli.git"
+  },
+  "keywords": ["ai", "cli", "coding-agent", "claude", "terminal"],
   "dependencies": {
     "@anthropic-ai/sdk": "^0.60.0"
   },
