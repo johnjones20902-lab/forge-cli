@@ -7,7 +7,7 @@ Your own AI coding agent in the terminal — same concept as Claude Code / OpenC
 The easiest way — works in Command Prompt, PowerShell, or any terminal (needs [Node.js](https://nodejs.org) 18+):
 
 ```
-npm install -g forge-code
+npm install -g @scousedeveloper123/forge-code
 ```
 
 Or the one-line script installers:
